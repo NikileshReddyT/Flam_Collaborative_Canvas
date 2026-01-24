@@ -1,0 +1,20 @@
+{
+  "name": "collaborative-canvas",
+  "version": "1.0.0",
+  "description": "Real-time collaborative drawing canvas with multi-user sync",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server/server.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "socket.io-client": "^4.6.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

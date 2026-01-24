@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collaborative Canvas</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "socket.io-client": "https://cdn.jsdelivr.net/npm/socket.io-client@4.6.1/+esm"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <!-- Name Modal -->
+  <div id="nameModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2>🎨 Welcome to Collaborative Canvas</h2>
+      <p>Enter your name and a room ID to start collaborative drawing!</p>
+      <div class="name-input-group">
+        <input type="text" id="nameInput" placeholder="Your name..." maxlength="20" autofocus>
+      </div>
+      <div class="name-input-group">
+        <input type="text" id="roomInput" placeholder="Room ID (e.g. 'lobby')" maxlength="20">
+        <button id="joinBtn" type="button">Join Room</button>
+      </div>
+      <div id="nameError" class="error-message hidden">Please enter a name</div>
+    </div>
+  </div>
+
+  <div id="app">
+    <header class="toolbar">
+      <div class="logo">🎨 Canvas</div>
+
+      <div class="tool-selector">
+        <button id="brushTool" class="tool-btn active" data-tool="brush" aria-label="Brush tool" title="Brush Tool (B)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13.28C18.4 14.5 19 15.5 19 17c0 2.2-1.8 4-4 4s-4-1.8-4-4c0-.8.2-1.5.5-2.2" />
+            <path d="M16 14.5l-5.5-5.5a2.12 2.12 0 0 0-3 3L13 17.5" />
+            <path d="M10.5 8.5L3 16c-.6.6-.6 1.4.1 2.1.6.6 1.4.6 2.1.1L12.5 11" />
+          </svg>
+        </button>
+        <button id="rectTool" class="tool-btn" data-tool="rect" aria-label="Rectangle tool" title="Rectangle Tool (R)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+          </svg>
+        </button>
+        <button id="eraserTool" class="tool-btn" data-tool="eraser" aria-label="Eraser tool" title="Eraser Tool (E)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L20 20Z" />
+            <line x1="9" y1="6" x2="18" y2="15" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="color-picker-wrapper">
+        <button id="colorPicker" class="color-btn" aria-label="Pick color">
+          <span id="currentColor" class="color-circle" style="background: #2C2C2C;"></span>
+        </button>
+        <div id="colorPalette" class="color-palette hidden">
+          <div class="preset-colors">
+            <button class="preset-color" data-color="#2C2C2C" style="background: #2C2C2C;"></button>
+            <button class="preset-color" data-color="#FFFFFF"
+              style="background: #FFFFFF; border: 1px solid #E0E0E0;"></button>
+            <button class="preset-color" data-color="#FF6B6B" style="background: #FF6B6B;"></button>
+            <button class="preset-color" data-color="#4ECDC4" style="background: #4ECDC4;"></button>
+            <button class="preset-color" data-color="#45B7D1" style="background: #45B7D1;"></button>
+            <button class="preset-color" data-color="#FFA07A" style="background: #FFA07A;"></button>
+            <button class="preset-color" data-color="#98D8C8" style="background: #98D8C8;"></button>
+            <button class="preset-color" data-color="#F7DC6F" style="background: #F7DC6F;"></button>
+            <button class="preset-color" data-color="#BB8FCE" style="background: #BB8FCE;"></button>
+            <button class="preset-color" data-color="#52C41A" style="background: #52C41A;"></button>
+            <button class="preset-color" data-color="#FF0000" style="background: #FF0000;"></button>
+            <button class="preset-color" data-color="#0000FF" style="background: #0000FF;"></button>
+          </div>
+          <div class="custom-color">
+            <input type="text" id="hexInput" placeholder="#000000" maxlength="7">
+            <button id="applyColor">✓</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stroke-width-wrapper">
+        <span class="stroke-label">Width:</span>
+        <input type="range" id="strokeWidth" min="1" max="50" value="5" class="stroke-slider">
+        <span id="strokeValue" class="stroke-value">5px</span>
+      </div>
+
+      <div class="undo-redo">
+        <button id="undoBtn" class="action-btn" aria-label="Undo (Ctrl+Z)" disabled title="Undo (Ctrl+Z)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7v6h6" />
+            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+          </svg>
+        </button>
+        <button id="redoBtn" class="action-btn" aria-label="Redo (Ctrl+Y)" disabled title="Redo (Ctrl+Y)">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 7v6h-6" />
+            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+          </svg>
+        </button>
+        <button id="clearBtn" class="action-btn" aria-label="Clear Canvas" title="Clear Canvas">
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="users-indicator">
+        <button id="usersBtn" class="users-btn" aria-label="Active users" title="See who is online">
+          <div id="userAvatars" class="user-avatars"></div>
+          <span id="userCount"></span>
+        </button>
+        <div id="usersList" class="users-list hidden">
+          <div class="users-header">Active Users</div>
+          <div id="usersListContent" class="users-list-content"></div>
+        </div>
+        <!-- Profile Button Moved Here -->
+        <button id="currentUser" class="users-btn" style="margin-left: 12px; font-weight: 600;"
+          title="Click to Change Name/Room">
+          Guest
+        </button>
+      </div>
+    </header>
+
+    <main class="canvas-container">
+      <div id="cursorLayer" class="cursor-layer"></div>
+      <canvas id="drawingCanvas" class="drawing-canvas canvas-cursor"></canvas>
+    </main>
+
+    <footer class="status-bar">
+      <div class="status-item">
+        <span class="status-icon">🟢</span>
+        <span id="connectionText">Connected</span>
+      </div>
+      <div class="status-item status-right">
+        <!-- Profile was moved to header -->
+        <span style="color: #999; font-size: 11px;">Press 'B', 'R', 'E' to switch tools</span>
+      </div>
+    </footer>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Name Change Modal -->
+    <div id="nameChangeModal" class="modal-overlay hidden">
+      <div class="modal-content">
+        <h2>✏️ Change Your Name</h2>
+        <div class="name-input-group">
+          <input type="text" id="nameChangeInput" placeholder="New name..." maxlength="20" autofocus>
+          <button id="saveNameBtn" type="button">Save</button>
+        </div>
+        <div id="nameChangeError" class="error-message hidden">Please enter a valid name</div>
+        <button id="cancelNameChange" class="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+
+</html>
