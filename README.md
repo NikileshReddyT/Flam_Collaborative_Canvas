@@ -40,7 +40,7 @@ If you want to run this project locally on your machine:
 
 1.  **Clone & Install**:
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/NikileshReddyT/Flam_Collaborative_Canvas.git
     cd collaborative-canvas
     npm install
     ```

@@ -143,11 +143,24 @@ class App {
     const toolBtns = document.querySelectorAll('.tool-btn');
     toolBtns.forEach(btn => {
       btn.onclick = () => {
-        const tool = btn.dataset.tool;
-        this.canvasDrawing.setTool(tool);
-        toolBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        this.selectTool(btn.dataset.tool);
       };
+    });
+
+    // --- Keyboard Shortcuts ---
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'b') this.selectTool('brush');
+      if (key === 'e') this.selectTool('eraser');
+      if (key === 'r') this.selectTool('rect');
+
+      // Undo
+      if ((e.ctrlKey || e.metaKey) && key === 'z') {
+        e.preventDefault();
+        document.getElementById('undoBtn').click();
+      }
     });
 
     // Width
@@ -236,6 +249,15 @@ class App {
       cursor.remove();
       this.cursors.delete(userId);
     }
+  }
+
+  selectTool(tool) {
+    if (!this.canvasDrawing) return;
+    this.canvasDrawing.setTool(tool);
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+      if (btn.dataset.tool === tool) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
   }
 
   toast(msg) {
