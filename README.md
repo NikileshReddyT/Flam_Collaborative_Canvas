@@ -4,6 +4,16 @@ A real-time collaborative drawing application built with **Node.js**, **Socket.i
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
+## 🚀 Live Demo
+
+**[Click here to open the Collaborative Canvas](https://flam-collaborative-canvas-6v9u.onrender.com/)**
+
+**How to use:**
+1.  Open the link.
+2.  Enter a **Room ID** (e.g., `fun-room`) and your **Name**.
+3.  Share the Room ID with a friend so they can join and draw with you!
+    > **Tip for Testing:** Open the link in a second browser tab (or Incognito window) and join the same room to see the real-time sync in action!
+
 ## Features
 
 -   **Real-time Collaboration**: Draw with multiple people instantly.
@@ -13,10 +23,25 @@ A real-time collaborative drawing application built with **Node.js**, **Socket.i
 -   **Undo/Redo**: Mistake? Just Undo.
 -   **Smart Sync**: Uses "Individual History" logic. If you clear your canvas, only *your* strokes disappear for others.
 
-## How to Run
+## How to Use Tools
 
-1.  **Install Dependencies**:
+-   **Brush (B)**: Freehand drawing.
+-   **Rectangle (R)**: Drag to create boxes.
+-   **Eraser (E)**: Erase parts of the drawing.
+-   **Color Picker**: Click the circle to pick a color.
+-   **Stroke Width**: Drag the slider to change thickness.
+-   **Undo (Ctrl+Z)**: Remove your last stroke.
+-   **Redo (Ctrl+Y)**: Restore your last stroke.
+-   **Profile**: Click your name in the top right to change settings.
+
+## Local Development
+
+If you want to run this project locally on your machine:
+
+1.  **Clone & Install**:
     ```bash
+    git clone <repository-url>
+    cd collaborative-canvas
     npm install
     ```
 
@@ -27,19 +52,6 @@ A real-time collaborative drawing application built with **Node.js**, **Socket.i
 
 3.  **Open App**:
     Visit `http://localhost:3000` in your browser.
-
-## How to Use
-
-1.  **Join**: Enter your **Name** and a **Room ID** (e.g., "DesignTeam").
-2.  **Draw**:
-    -   **Brush (B)**: Freehand drawing.
-    -   **Rectangle (R)**: Drag to create boxes.
-    -   **Eraser (E)**: Erase parts of the drawing.
-3.  **Tools**:
-    -   **Color**: Click the circle to pick a color.
-    -   **Width**: Drag the slider to change thickness.
-    -   **Undo/Redo**: Ctrl+Z / Ctrl+Y.
-4.  **Profile**: Click your name in the top right to change your Name or switch Rooms.
 
 ## Architecture (For Interviewers)
 
