@@ -3,25 +3,38 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 // --- Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const clientPath = path.join(__dirname, '../client');
+
+// Debug: Check if client files exist
+if (fs.existsSync(clientPath)) {
+  console.log('Serving client files from:', clientPath);
+} else {
+  console.error('CRITICAL: Client folder missing at:', clientPath);
+}
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`${req.method} ${req.url}`);
   next();
 });
 
-app.use(express.static(path.join(__dirname, '../client')));
+app.use(express.static(clientPath));
 
-// SPA Fallback: Serve index.html for any unknown route
+// Fallback: serve index.html for non-API routes (SPA support)
+// But return 404 for missing assets (files with extensions)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/index.html'));
+  if (req.url.includes('.')) {
+    return res.status(404).send('Not Found');
+  }
+  res.sendFile(path.join(clientPath, 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
