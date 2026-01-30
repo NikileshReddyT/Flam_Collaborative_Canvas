@@ -31,8 +31,7 @@ Drawing is event-driven to maximize performance. We do not sync the entire canva
 The app uses an **Optimistic UI** with **Isolated User Histories**.
 
 -   **Local**: The user draws immediately to the canvas (`myStrokes` array).
--   **Remote**: Remote events are rendered into a separate layer (`remoteStrokes` Map).
--   **Conflict Resolution**: There is no complex merging. Operations are additive.
+-   **Sync Strategy**: The system broadcasts *operations* (start, point, end). Clients have two layers: `myStrokes` (local) and `remoteStrokes` (others). This separation makes implementation clean and "undo" logic straightforward. Operations are additive.
 -   **Undo/Redo**:
     -   Undoing triggers a "soft delete".
     -   The server marks the specific stroke ID as `undone: true`.

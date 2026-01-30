@@ -60,10 +60,17 @@ export class CanvasDrawing {
     };
 
     // Draw dot
-    this.ctx.beginPath();
-    this.ctx.fillStyle = this.color;
-    this.ctx.arc(x, y, this.width / 2, 0, Math.PI * 2);
-    this.ctx.fill();
+    // For Eraser, we MUST redraw to ensure layer isolation (otherwise we delete remote user pixels from main canvas!)
+    // For Rect, we generally don't draw the initial dot.
+    if (this.tool === 'eraser' || this.tool === 'rect') {
+      this.redraw();
+    } else {
+      // For Brush, drawing directly to specific context is optimized and safe (additive)
+      this.ctx.beginPath();
+      this.ctx.fillStyle = this.color;
+      this.ctx.arc(x, y, this.width / 2, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
 
     if (this.onDrawStart) this.onDrawStart(this.currentStroke);
   }
@@ -78,9 +85,22 @@ export class CanvasDrawing {
       this.redraw(); // Full redraw to animate rect stretching
     } else {
       // Optimization for brush: just draw latest segment
-      const points = this.currentStroke.points;
-      if (points.length >= 2) {
-        this.renderSegment(points[points.length - 2], points[points.length - 1], this.currentStroke);
+      // But we must draw to the CORRECT context.
+      // Since 'move' is for local drawing, we ideally want to draw to the 'Layer' logic if we were strictly layered.
+      // However, for performance, we often just draw to main ctx.
+      // BUT if we are erasing, drawing to main ctx will erase remote strokes too!
+      // So... we MUST fully redraw if erasing to maintain the layer illusion?
+      // Or we can draw to a temp layer?
+      // Simplest: If erasing, trigger full redraw. If brushing, direct draw is "okay" but might overlap remote until next redraw?
+      // Actually, if we draw My Stroke on top, it covers remote. That's fine.
+      // If we Erase, we MUST use layer logic.
+      if (this.tool === 'eraser') {
+        this.redraw();
+      } else {
+        const points = this.currentStroke.points;
+        if (points.length >= 2) {
+          this.renderSegment(points[points.length - 2], points[points.length - 1], this.currentStroke, this.ctx);
+        }
       }
     }
 
@@ -106,6 +126,11 @@ export class CanvasDrawing {
       ...data.stroke,
       points: [] // Start empty, fill as we get points
     });
+
+    // For Eraser, we must redraw immediately to ensure proper layering of the initial state
+    if (data.stroke.type === 'eraser') {
+      this.redraw();
+    }
   }
 
   // Called when remote user moves
@@ -114,8 +139,8 @@ export class CanvasDrawing {
     if (stroke) {
       stroke.points.push(data.point);
 
-      // Fix for Rectangle: Redraw full canvas to show expanding box live
-      if (stroke.type === 'rect') {
+      // Fix for Rectangle & Eraser: Redraw to ensure correct layering
+      if (stroke.type === 'rect' || stroke.type === 'eraser') {
         this.redraw();
         return;
       }
@@ -155,7 +180,20 @@ export class CanvasDrawing {
 
     // If we missed the live drawing (e.g. joined mid-stroke), render it now
     if (!wasTracking) {
-      this.renderStroke(strokeData);
+      if (strokeData.type === 'eraser') {
+        this.redraw();
+      } else {
+        this.renderStroke(strokeData);
+      }
+    } else {
+      // If we WERE tracking, we still need to redraw if it was an eraser/rect
+      // because we just moved it from "Active" to "Static", and 'redraw' handles them differently?
+      // Actually, redraw handles them same way.
+      // BUT if the last 'move' event didn't fire (rare), updating it might be needed.
+      // SAFE BET: Always redraw on Eraser End to ensure the cut is permanent and clean.
+      if (strokeData.type === 'eraser') {
+        this.redraw();
+      }
     }
   }
 
@@ -232,85 +270,129 @@ export class CanvasDrawing {
 
   // --- Rendering ---
 
-  renderSegment(p1, p2, stroke) {
-    if (stroke.type === 'rect') {
-      // For rectangle, we don't draw segments. We wait for redraw or handle it in move.
-      // But for "live" preview in move(), we might want to clear and draw rect?
-      // Actually, easiest is to handle rect drawing in redraw() or specific move logic.
-      // for "active" remote strokes, we might need special handling.
-      return;
-    }
-
-    this.ctx.beginPath();
-    this.ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-    this.ctx.lineWidth = stroke.width;
-    this.ctx.moveTo(p1.x, p1.y);
-    this.ctx.lineTo(p2.x, p2.y);
-    this.ctx.stroke();
-  }
-
   // --- Rendering ---
 
+  renderSegment(p1, p2, stroke, targetCtx = this.ctx) {
+    if (stroke.type === 'rect') return;
+
+    targetCtx.save();
+    if (stroke.type === 'eraser') {
+      targetCtx.globalCompositeOperation = 'destination-out';
+    }
+
+    targetCtx.beginPath();
+    targetCtx.strokeStyle = stroke.color;
+    targetCtx.lineWidth = stroke.width;
+    targetCtx.moveTo(p1.x, p1.y);
+    targetCtx.lineTo(p2.x, p2.y);
+    targetCtx.stroke();
+    targetCtx.restore();
+  }
+
   redraw() {
-    // Clear
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const w = this.canvas.width;
+    const h = this.canvas.height;
 
-    // Draw Remote (Completed)
-    for (const [userId, strokes] of this.remoteStrokes) {
-      strokes.forEach(s => {
-        if (!s.undone) this.renderStroke(s);
+    // 1. Clear Main
+    this.ctx.clearRect(0, 0, w, h);
+
+    // Ensure Layer
+    if (!this.layerCanvas) {
+      this.layerCanvas = document.createElement('canvas');
+    }
+    if (this.layerCanvas.width !== w || this.layerCanvas.height !== h) {
+      this.layerCanvas.width = w;
+      this.layerCanvas.height = h;
+    }
+    const lCtx = this.layerCanvas.getContext('2d');
+    // Important: Ensure layer settings match
+    lCtx.lineCap = 'round';
+    lCtx.lineJoin = 'round';
+
+    // 2. Identify all Remote Users
+    const remoteUsers = new Set(this.remoteStrokes.keys());
+    this.activeRemoteStrokes.forEach(s => {
+      if (s.userId) remoteUsers.add(s.userId);
+    });
+
+    // 3. Render Each Remote User (Isolated Layering)
+    for (const userId of remoteUsers) {
+      // Clear Layer
+      lCtx.clearRect(0, 0, w, h);
+
+      // Draw History
+      const history = this.remoteStrokes.get(userId);
+      if (history) {
+        history.forEach(s => {
+          if (!s.undone) this.renderStroke(s, lCtx);
+        });
+      }
+
+      // Draw Active
+      this.activeRemoteStrokes.forEach(s => {
+        if (s.userId === userId) this.renderStroke(s, lCtx);
       });
+
+      // Composite to Main
+      this.ctx.drawImage(this.layerCanvas, 0, 0);
     }
 
-    // Draw Remote (Active/In-Progress) - Essential for seeing others drag Rectangles
-    for (const [strokeId, stroke] of this.activeRemoteStrokes) {
-      this.renderStroke(stroke);
-    }
+    // 4. Render Me (Isolated Layering)
+    if (this.myStrokes.length > 0 || (this.isDrawing && this.currentStroke)) {
+      lCtx.clearRect(0, 0, w, h);
 
-    // Draw Mine
-    this.myStrokes.forEach(s => this.renderStroke(s));
+      this.myStrokes.forEach(s => this.renderStroke(s, lCtx));
 
-    // Draw Current Active Stroke (if any, specifically for Rect preview)
-    if (this.isDrawing && this.currentStroke && this.currentStroke.type === 'rect') {
-      this.renderStroke(this.currentStroke);
+      if (this.isDrawing && this.currentStroke) {
+        this.renderStroke(this.currentStroke, lCtx);
+      }
+
+      this.ctx.drawImage(this.layerCanvas, 0, 0);
     }
   }
 
-  renderStroke(stroke) {
+  renderStroke(stroke, targetCtx = this.ctx) {
     // Handle Rectangle
     if (stroke.type === 'rect') {
       if (stroke.points.length < 1) return;
       const start = stroke.points[0];
-      const end = stroke.points[stroke.points.length - 1]; // Current end
+      const end = stroke.points[stroke.points.length - 1];
 
-      this.ctx.beginPath();
-      this.ctx.strokeStyle = stroke.color;
-      this.ctx.lineWidth = stroke.width;
-      this.ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      targetCtx.beginPath();
+      targetCtx.strokeStyle = stroke.color;
+      targetCtx.lineWidth = stroke.width;
+      targetCtx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
       return;
     }
 
     // Handle Brush/Eraser
     if (stroke.points.length < 1) return;
 
-    this.ctx.beginPath();
-    this.ctx.lineCap = 'round';
-    this.ctx.lineJoin = 'round';
-    this.ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-    this.ctx.lineWidth = stroke.width;
+    targetCtx.save();
+    if (stroke.type === 'eraser') {
+      targetCtx.globalCompositeOperation = 'destination-out';
+    }
+
+    targetCtx.beginPath();
+    targetCtx.lineCap = 'round';
+    targetCtx.lineJoin = 'round';
+    targetCtx.strokeStyle = stroke.color;
+    targetCtx.lineWidth = stroke.width;
 
     if (stroke.points.length === 1) {
-      this.ctx.fillStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-      this.ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-      this.ctx.fill();
+      targetCtx.fillStyle = stroke.color;
+      targetCtx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
+      targetCtx.fill();
+      targetCtx.restore();
       return;
     }
 
-    this.ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    targetCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
     for (let i = 1; i < stroke.points.length; i++) {
-      this.ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+      targetCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
     }
-    this.ctx.stroke();
+    targetCtx.stroke();
+    targetCtx.restore();
   }
 
   hasMyStrokes() {
